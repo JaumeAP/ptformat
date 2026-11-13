@@ -3210,6 +3210,78 @@ PTFFormat::read_params(const block_t& b, std::vector<param_t>& params) {
 	}
 }
 
+/* The numeric values of a settings chunk that holds text. "juce" (JUCE
+ * plugins) is an XML tag with attributes, after 8 bytes: each numeric
+ * attribute is a value of that name. "XPst" (Waves plugins) is an XML
+ * preset whose <Parameters> of each <PresetData Setup="..."> list the
+ * values in the plugin's units, separated by spaces, with * for one
+ * that is not set: each becomes a value named "<setup>#<position from
+ * 1>". The names of Waves parameters are not in the chunk. */
+static bool
+numeric_text (const std::string& t, double& v) {
+	if (t.empty())
+		return false;
+	char *e;
+	v = strtod (t.c_str (), &e);
+	return !*e;
+}
+
+void
+PTFFormat::read_text_settings (chunk_t& ch) {
+	const std::string& d = ch.data;
+	if (ch.id == "juce") {
+		size_t lt = d.find ("<com.");
+		size_t gt = d.find ('>', lt);
+		if (lt == std::string::npos || gt == std::string::npos)
+			return;
+		size_t at = d.find (' ', lt);
+		while (at != std::string::npos && at < gt) {
+			size_t eq = d.find ("=\"", at);
+			if (eq == std::string::npos || eq > gt)
+				break;
+			size_t close = d.find ('"', eq + 2);
+			if (close == std::string::npos || close > gt)
+				break;
+			setting_t st;
+			st.type = 'd';
+			st.name = d.substr (at + 1, eq - at - 1);
+			if (numeric_text (d.substr (eq + 2, close - eq - 2), st.value))
+				ch.settings.push_back (st);
+			at = close + 1;
+		}
+		return;
+	}
+	size_t at = 0;
+	while ((at = d.find ("<PresetData Setup=\"", at)) != std::string::npos) {
+		size_t q = d.find ('"', at + 19);
+		size_t open = d.find ("<Parameters", at);
+		size_t from = d.find ('>', open);
+		size_t to = d.find ("</Parameters>", from);
+		if (q == std::string::npos || open == std::string::npos || from == std::string::npos || to == std::string::npos)
+			return;
+		std::string setup = d.substr (at + 19, q - at - 19);
+		size_t i = from + 1;
+		for (unsigned n = 1; i < to; n++) {
+			while (i < to && isspace ((unsigned char)d[i]))
+				i++;
+			size_t j = i;
+			while (j < to && !isspace ((unsigned char)d[j]))
+				j++;
+			if (j == i)
+				break;
+			setting_t st;
+			st.type = 'd';
+			char num[16];
+			snprintf (num, sizeof num, "#%u", n);
+			st.name = setup + num;
+			if (numeric_text (d.substr (i, j - i), st.value))
+				ch.settings.push_back (st);
+			i = j;
+		}
+		at = to;
+	}
+}
+
 /* The settings chunks of an inserted plugin: the 0x1038 somewhere under
  * the insert's 0x2616 holds 4 bytes, the size of what follows (4 bytes)
  * and then AAX chunks, big-endian whatever the session is: the chunk's
@@ -3276,6 +3348,8 @@ PTFFormat::read_chunks(const block_t& b, std::vector<chunk_t>& chunks) {
 					at = v + width;
 				}
 			}
+			else if (ch.id == "juce" || ch.id == "XPst")
+				read_text_settings(ch);
 			chunks.push_back(ch);
 			pos += size;
 		}

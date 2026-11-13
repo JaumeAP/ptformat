@@ -244,8 +244,9 @@ public:
 	 * Controls State") is the format the AAX SDK gives plugins: a list
 	 * of named values, which settings holds with the value in the
 	 * plugin's own units (dB, Hz) and its type: 'd' double, 'l' 32-bit
-	 * integer, 'f' float. Other chunks ("All ", "XPst", "juce" in the
-	 * sessions seen) are left as data. */
+	 * integer, 'f' float. "juce" and "XPst" chunks are XML text: their
+	 * numeric attributes and parameter values are in settings too (see
+	 * read_text_settings). "All " is left as data. */
 	struct setting_t {
 		std::string name;
 		char        type;
@@ -807,6 +808,7 @@ private:
 	void parseplugins(void);
 	void read_params(const block_t& b, std::vector<param_t>& params);
 	void read_chunks(const block_t& b, std::vector<chunk_t>& chunks);
+	void read_text_settings(chunk_t& ch);
 	void parsegroups(void);
 	bool input_record(const block_t& strip, uint32_t& at, uint32_t& end) const;
 	void read_input(const block_t& strip, std::string& input);
